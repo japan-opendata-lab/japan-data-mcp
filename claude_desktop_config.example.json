@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "japan-official-data": {
+      "command": "python",
+      "args": ["-m", "mcp_server.server"],
+      "env": {
+        "RAPIDAPI_KEY": "YOUR_RAPIDAPI_KEY_HERE",
+        "RAPIDAPI_HOST": "japan-global-data-megabank.p.rapidapi.com"
+      }
+    }
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "$schema": "https://smithery.ai/schema/config.json",
+  "name": "japan-data-mcp",
+  "version": "1.0.0",
+  "description": "Model Context Protocol (MCP) server providing access to 155 official Japanese & US public datasets (10.16M+ records) including municipal demographics, GEPS public procurement, healthcare facilities, renewable energy, and DuckDB OLAP queries.",
+  "command": "python",
+  "args": ["-m", "mcp_server.server"],
+  "env": {
+    "RAPIDAPI_KEY": {
+      "type": "string",
+      "description": "Your RapidAPI subscription key for Global Data Megabank",
+      "required": true
+    },
+    "RAPIDAPI_HOST": {
+      "type": "string",
+      "description": "RapidAPI Host endpoint",
+      "default": "japan-global-data-megabank.p.rapidapi.com",
+      "required": false
+    }
+  }
+}
