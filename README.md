@@ -95,6 +95,14 @@ Get your API key at: **[RapidAPI Hub](https://rapidapi.com/organization/japan-op
 
 ---
 
+## 🔗 Related Ecosystem Resources
+
+- 📓 **[Interactive Google Colab Recipe (3 Minutes)](https://colab.research.google.com/github/japan-opendata-lab/japan-official-data-megabank/blob/main/notebooks/japan_open_data_in_3_minutes.ipynb)**: Query sample Parquet datasets in browser via DuckDB.
+- 🐙 **[Python SDK & Starter Kit](https://github.com/japan-opendata-lab/japan-official-data-megabank)**: Official client library and automated cross-domain analytics.
+- 🤗 **[Hugging Face Showcase Dataset](https://huggingface.co/datasets/japan-opendata/japan-official-data-megabank-showcase)**: Free downloadable Parquet samples across 7 major domains.
+
+---
+
 ## ⚠️ Disclaimer & Attribution
 
 - **Independent Project**: This MCP server is developed and maintained independently by **Japan Open Data Lab**.
