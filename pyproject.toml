@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "japan-data-mcp"
 version = "1.0.0"
-description = "Official Model Context Protocol (MCP) Server for Japan & US Government Open Data Megabank (155 Datasets / 10.16M+ Records)"
+description = "Model Context Protocol (MCP) Server for Japanese Public Open Data Megabank (by Japan Open Data Lab)"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
@@ -16,4 +16,4 @@ keywords = ["mcp", "japan", "open-data", "government", "statistics", "procuremen
 dependencies = []
 
 [project.scripts]
-japan-official-data-mcp = "mcp_server.server:run_stdio_server"
+japan-data-mcp = "server:run_stdio_server"

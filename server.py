@@ -27,10 +27,10 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 API_DIR = ROOT_DIR / "api"
 
 MCP_PROTOCOL_VERSION = "2024-11-05"
-SERVER_NAME = "japan-official-data-mcp"
+SERVER_NAME = "japan-data-mcp"
 SERVER_VERSION = "1.0.0"
 
-DEFAULT_RAPIDAPI_HOST = os.environ.get("RAPIDAPI_HOST", "japan-global-data-megabank.p.rapidapi.com")
+DEFAULT_RAPIDAPI_HOST = os.environ.get("RAPIDAPI_HOST", "japan-data-megabank-api.p.rapidapi.com")
 DEFAULT_API_BASE_URL = os.environ.get("JAPAN_DATA_API_URL", f"https://{DEFAULT_RAPIDAPI_HOST}")
 
 
