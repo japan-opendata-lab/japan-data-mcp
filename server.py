@@ -56,6 +56,18 @@ MCP_TOOLS: List[Dict[str, Any]] = [
                 },
             },
         },
+        "outputSchema": {
+            "type": "object",
+            "properties": {
+                "total": {"type": "integer"},
+                "datasets": {"type": "array", "items": {"type": "object"}},
+            },
+        },
+        "annotations": {
+            "readOnlyHint": True,
+            "audience": ["user", "assistant"],
+            "priority": 1.0,
+        },
     },
     {
         "name": "describe_japan_dataset",
@@ -72,6 +84,19 @@ MCP_TOOLS: List[Dict[str, Any]] = [
                 }
             },
             "required": ["dataset_id"],
+        },
+        "outputSchema": {
+            "type": "object",
+            "properties": {
+                "dataset_id": {"type": "string"},
+                "schema": {"type": "object"},
+                "sample_record": {"type": "object"},
+            },
+        },
+        "annotations": {
+            "readOnlyHint": True,
+            "audience": ["user", "assistant"],
+            "priority": 0.9,
         },
     },
     {
@@ -112,6 +137,18 @@ MCP_TOOLS: List[Dict[str, Any]] = [
             },
             "required": ["dataset_id"],
         },
+        "outputSchema": {
+            "type": "object",
+            "properties": {
+                "count": {"type": "integer"},
+                "records": {"type": "array", "items": {"type": "object"}},
+            },
+        },
+        "annotations": {
+            "readOnlyHint": True,
+            "audience": ["user", "assistant"],
+            "priority": 1.0,
+        },
     },
     {
         "name": "execute_japan_megabank_sql",
@@ -129,6 +166,19 @@ MCP_TOOLS: List[Dict[str, Any]] = [
                 }
             },
             "required": ["sql"],
+        },
+        "outputSchema": {
+            "type": "object",
+            "properties": {
+                "row_count": {"type": "integer"},
+                "columns": {"type": "array", "items": {"type": "string"}},
+                "rows": {"type": "array", "items": {"type": "object"}},
+            },
+        },
+        "annotations": {
+            "readOnlyHint": True,
+            "audience": ["user", "assistant"],
+            "priority": 0.8,
         },
     },
     {
