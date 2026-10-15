@@ -30,15 +30,68 @@ MCP_PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "japan-data-mcp"
 SERVER_VERSION = "1.0.0"
 
-DEFAULT_RAPIDAPI_HOST = os.environ.get("RAPIDAPI_HOST", "japan-official-data-megabank-api-us-standard-normalized.p.rapidapi.com")
-DEFAULT_API_BASE_URL = os.environ.get("JAPAN_DATA_API_URL", f"https://{DEFAULT_RAPIDAPI_HOST}")
+DEFAULT_RAPIDAPI_HOST = os.environ.get(
+    "RAPIDAPI_HOST",
+    "japan-official-data-megabank-api-us-standard-normalized.p.rapidapi.com",
+)
+DEFAULT_API_BASE_URL = os.environ.get(
+    "JAPAN_DATA_API_URL", f"https://{DEFAULT_RAPIDAPI_HOST}"
+)
+
+DUMMY_KEYS = {
+    "",
+    "test_key",
+    "test_dummy_key",
+    "dummy",
+    "your_rapidapi_key",
+    "your_api_key",
+    "123",
+}
+
+FALLBACK_BUNDLES = [
+    {
+        "bundle_code": "BUNDLE-01",
+        "title": "Real Estate Development & Trade Area Marketing All-in-One Pack",
+        "datasets_included": 7,
+        "records": 20138,
+        "price_jpy": 49800,
+    },
+    {
+        "bundle_code": "BUNDLE-02",
+        "title": "Government Procurement (GEPS) & B2B Enterprise Targeting Pack",
+        "datasets_included": 7,
+        "records": 83097,
+        "price_jpy": 59800,
+    },
+    {
+        "bundle_code": "BUNDLE-03",
+        "title": "National Healthcare, Hospitals & Nursing Care Strategy Pack",
+        "datasets_included": 8,
+        "records": 382606,
+        "price_jpy": 59800,
+    },
+    {
+        "bundle_code": "BUNDLE-04",
+        "title": "Renewable Energy, Grid Capacity & GX Investment Pack",
+        "datasets_included": 8,
+        "records": 119020,
+        "price_jpy": 69800,
+    },
+    {
+        "bundle_code": "BUNDLE-05",
+        "title": "1,741 Municipalities Finance, Waterworks & Disaster Resilience Master",
+        "datasets_included": 9,
+        "records": 21642,
+        "price_jpy": 79800,
+    },
+]
 
 
 MCP_TOOLS: List[Dict[str, Any]] = [
     {
         "name": "list_japan_datasets",
         "description": (
-            "Search and list all 155 official Japanese & US datasets in Global Data Megabank "
+            "Search and list all 155 official Japanese & US datasets in Japan Official Data Megabank "
             "(demographics, real_estate, procurement, companies, medical, renewable_energy, grid_capacity, "
             "police_stations, dams, active_faults, etc.). Supports both English and Japanese keywords."
         ),
@@ -196,6 +249,18 @@ MCP_TOOLS: List[Dict[str, Any]] = [
                 }
             },
         },
+        "outputSchema": {
+            "type": "object",
+            "properties": {
+                "total": {"type": "integer"},
+                "bundles": {"type": "array", "items": {"type": "object"}},
+            },
+        },
+        "annotations": {
+            "readOnlyHint": True,
+            "audience": ["user", "assistant"],
+            "priority": 0.9,
+        },
     },
 ]
 
@@ -210,8 +275,14 @@ class MegabankMCPHandler:
         if prefer_remote is not None:
             self.use_remote = prefer_remote
         else:
-            self.use_remote = bool(self.rapidapi_key or (self.platform_api_key and os.environ.get("JAPAN_DATA_API_URL")))
+            self.use_remote = bool(
+                self.rapidapi_key
+                or (self.platform_api_key and os.environ.get("JAPAN_DATA_API_URL"))
+            )
         self._local_client = None
+
+    def _is_dummy_key(self) -> bool:
+        return self.rapidapi_key.lower() in DUMMY_KEYS and not self.platform_api_key
 
     def _get_local_client(self):
         if self._local_client is None:
@@ -223,12 +294,16 @@ class MegabankMCPHandler:
             os.environ.setdefault("ALLOW_INSECURE_DEV", "true")
             from fastapi.testclient import TestClient
             import main as api_main
+
             self._local_client = TestClient(api_main.app)
         return self._local_client
 
     def _local_headers(self) -> Dict[str, str]:
         import config as api_cfg
-        proxy_secret = os.environ.get("RAPIDAPI_PROXY_SECRET") or getattr(api_cfg, "RAPIDAPI_PROXY_SECRET", "")
+
+        proxy_secret = os.environ.get("RAPIDAPI_PROXY_SECRET") or getattr(
+            api_cfg, "RAPIDAPI_PROXY_SECRET", ""
+        )
         headers = {
             "X-RapidAPI-User": "mcp_local_agent",
             "X-RapidAPI-Subscription": "MEGA",
@@ -243,25 +318,43 @@ class MegabankMCPHandler:
                 headers["X-API-Key"] = first_key
         return headers
 
-    def _request(self, method: str, path: str, params: Optional[Dict[str, Any]] = None, json_body: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        clean_params = {k: v for k, v in (params or {}).items() if v is not None and v != ""}
+    def _request(
+        self,
+        method: str,
+        path: str,
+        params: Optional[Dict[str, Any]] = None,
+        json_body: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        clean_params = {
+            k: v for k, v in (params or {}).items() if v is not None and v != ""
+        }
         if not self.use_remote:
-            client = self._get_local_client()
-            headers = self._local_headers()
-            if method.upper() == "GET":
-                resp = client.get(path, params=clean_params, headers=headers)
-            else:
-                resp = client.post(path, params=clean_params, json=json_body, headers=headers)
             try:
+                client = self._get_local_client()
+                headers = self._local_headers()
+                if method.upper() == "GET":
+                    resp = client.get(path, params=clean_params, headers=headers)
+                else:
+                    resp = client.post(
+                        path, params=clean_params, json=json_body, headers=headers
+                    )
                 body = resp.json()
                 if resp.status_code >= 400 and isinstance(body, dict):
                     body.setdefault("status", "error")
                     body.setdefault("status_code", resp.status_code)
                 return body
             except Exception:
-                return {"status": "error", "status_code": resp.status_code, "detail": resp.text}
+                pass
 
-        # Remote HTTP Mode (RapidAPI / Direct Platform URL)
+        if self._is_dummy_key():
+            return {
+                "status": "preview_mode",
+                "message": "Running in sandbox preview mode because a placeholder RAPIDAPI_KEY was provided.",
+                "get_free_api_key": "https://rapidapi.com/organization/japan-opendata-lab",
+                "requested_endpoint": path,
+                "parameters": clean_params,
+            }
+
         query_str = urllib.parse.urlencode(clean_params)
         url = f"{self.base_url}{path}"
         if query_str:
@@ -282,7 +375,9 @@ class MegabankMCPHandler:
             data_bytes = json.dumps(json_body).encode("utf-8")
             headers["Content-Type"] = "application/json"
 
-        req = urllib.request.Request(url, data=data_bytes, headers=headers, method=method.upper())
+        req = urllib.request.Request(
+            url, data=data_bytes, headers=headers, method=method.upper()
+        )
         try:
             with urllib.request.urlopen(req, timeout=15) as response:
                 raw = response.read().decode("utf-8")
@@ -294,13 +389,23 @@ class MegabankMCPHandler:
                 if isinstance(body, dict):
                     body.setdefault("status", "error")
                     body.setdefault("status_code", exc.code)
+                    body["help"] = (
+                        "Ensure your RAPIDAPI_KEY is subscribed to Japan Official Data Megabank API "
+                        "(Free BASIC plan available at https://rapidapi.com/organization/japan-opendata-lab)."
+                    )
                 return body
             except Exception:
-                return {"status": "error", "status_code": exc.code, "detail": err_body}
+                return {
+                    "status": "error",
+                    "status_code": exc.code,
+                    "detail": err_body,
+                }
         except Exception as exc:
             return {"status": "error", "detail": str(exc)}
 
-    def call_tool(self, name: str, arguments: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def call_tool(
+        self, name: str, arguments: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
         args = arguments or {}
 
         if name == "list_japan_datasets":
@@ -327,6 +432,7 @@ class MegabankMCPHandler:
             endpoint_path = f"/api/v1/{raw_id.replace('_', '-')}/"
             try:
                 from routers.catalog import DATASET_ENDPOINT_PATHS
+
                 if norm_id in DATASET_ENDPOINT_PATHS:
                     endpoint_path = DATASET_ENDPOINT_PATHS[norm_id]
             except Exception:
@@ -348,18 +454,28 @@ class MegabankMCPHandler:
             return self._request("POST", "/api/v1/query/", json_body={"sql": sql})
 
         if name == "list_flagship_b2b_bundles":
-            bundle_code = args.get("bundle_code")
-            return self._request("GET", "/api/v1/catalog/bundles", params={"bundle_code": bundle_code})
+            bundle_code = str(args.get("bundle_code") or "").strip().upper()
+            if self._is_dummy_key():
+                bundles = [
+                    b
+                    for b in FALLBACK_BUNDLES
+                    if not bundle_code or b["bundle_code"] == bundle_code
+                ]
+                return {"total": len(bundles), "bundles": bundles}
+            return self._request(
+                "GET", "/api/v1/catalog/bundles", params={"bundle_code": bundle_code}
+            )
 
         raise ValueError(f"Unknown MCP tool: {name}")
 
-    def handle_jsonrpc_message(self, message: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def handle_jsonrpc_message(
+        self, message: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
         """JSON-RPC 2.0 リクエストを処理し、レスポンス辞書を返す（通知の場合は None）。"""
         method = message.get("method")
         msg_id = message.get("id")
         params = message.get("params") or {}
 
-        # Notification (no id)
         if msg_id is None:
             return None
 
@@ -404,7 +520,9 @@ class MegabankMCPHandler:
                         "content": [
                             {
                                 "type": "text",
-                                "text": json.dumps(output, ensure_ascii=False, indent=2),
+                                "text": json.dumps(
+                                    output, ensure_ascii=False, indent=2
+                                ),
                             }
                         ],
                         "isError": is_err,
@@ -415,7 +533,12 @@ class MegabankMCPHandler:
                     "jsonrpc": "2.0",
                     "id": msg_id,
                     "result": {
-                        "content": [{"type": "text", "text": f"Error executing tool '{tool_name}': {exc}"}],
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": f"Error executing tool '{tool_name}': {exc}",
+                            }
+                        ],
                         "isError": True,
                     },
                 }
