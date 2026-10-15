@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  test-mcp-server:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install package and check syntax
+        run: |
+          python -m pip install --upgrade pip
+          pip install .
+          python -m py_compile server.py
+
+      - name: Verify MCP JSON-RPC initialization and tools
+        run: |
+          python -c "
+          import server
+          h = server.MegabankMCPHandler()
+          init_res = h.handle_jsonrpc_message({'jsonrpc': '2.0', 'id': 1, 'method': 'initialize'})
+          assert init_res['result']['serverInfo']['name'] == 'japan-data-mcp'
+          tools_res = h.handle_jsonrpc_message({'jsonrpc': '2.0', 'id': 2, 'method': 'tools/list'})
+          assert len(tools_res['result']['tools']) == 5
+          print('MCP CI verification passed successfully!')
+          "
