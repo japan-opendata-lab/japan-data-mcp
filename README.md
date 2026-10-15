@@ -4,20 +4,22 @@
 [![MCP Standard](https://img.shields.io/badge/MCP-JSON--RPC%202.0-blue)](https://modelcontextprotocol.io/)
 [![Python Version](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
 [![RapidAPI Hub](https://img.shields.io/badge/Production%20API-RapidAPI%20Hub-orange)](https://rapidapi.com/organization/japan-opendata-lab)
+[![Smithery Verified](https://img.shields.io/badge/Smithery-100%25%20Verified-brightgreen)](https://smithery.ai)
+[![Glama Quality](https://img.shields.io/badge/Glama%20TDQS-4.5%2F5.0%20(Grade%20A)-brightgreen)](https://glama.ai)
 
-**Model Context Protocol (MCP) Server for Japanese Public Open Data (maintained independently by Japan Open Data Lab).**
+Model Context Protocol (MCP) Server for Japanese Public Open Data (maintained independently by Japan Open Data Lab).
 
-Connect **Claude Desktop, Cursor, Windsurf, Cline, and LangChain** agents directly to clean, standardized Japanese government open data.
+Connect Claude Desktop, Cursor, Windsurf, Cline, and LangChain agents directly to clean, standardized Japanese government open data.
 
 ---
 
-## ⚡ Quick Start (Claude Desktop / Cursor)
+## Quick Start (Claude Desktop / Cursor)
 
 ### Option 1: Direct Run via Python (Zero Dependencies)
 
 Add the following to your Claude Desktop configuration file:
-- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+- macOS: ~/Library/Application Support/Claude/claude_desktop_config.json
+- Windows: %APPDATA%\Claude\claude_desktop_config.json
 
 ```json
 {
