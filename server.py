@@ -223,8 +223,8 @@ MCP_TOOLS: List[Dict[str, Any]] = [
         "name": "search_japan_official_data",
         "description": (
             "Fetch and filter actual data records from a single dataset using standardized parameters "
-            "(prefecture name, 5-digit JIS municipality code, 13-digit corporate number, or free-text keyword). "
-            "Multiple filters are combined using logical AND. "
+            "(prefecture name, 5-digit JIS municipality code, 13-digit corporate number, target year with strict out-of-range validation, "
+            "or free-text keyword). Multiple filters are combined using logical AND. "
             "WHEN TO USE: Use for fast, single-table record lookups and filtered sampling once you know the 'dataset_id'. "
             "WHEN NOT TO USE: Do not use for discovering dataset IDs (use 'list_japan_datasets'), inspecting column schemas "
             "(use 'describe_japan_dataset'), or performing cross-table JOINs and GROUP BY aggregations (use 'execute_japan_megabank_sql')."
@@ -236,7 +236,7 @@ MCP_TOOLS: List[Dict[str, Any]] = [
                     "type": "string",
                     "description": (
                         "Target dataset ID obtained from 'list_japan_datasets' "
-                        "(e.g., 'demographics', 'procurement', 'medical', 'companies', 'real_estate')."
+                        "(e.g., 'demographics', 'procurement', 'medical', 'companies', 'land_prices_official', 'real_estate')."
                     ),
                 },
                 "prefecture": {
@@ -258,6 +258,13 @@ MCP_TOOLS: List[Dict[str, Any]] = [
                     "description": (
                         "Optional exact 13-digit Japan National Tax Agency corporate number string "
                         "(e.g., '1000012010019') or 10-digit US SEC CIK."
+                    ),
+                },
+                "year": {
+                    "type": "integer",
+                    "description": (
+                        "Optional target year in 4-digit format (e.g., 2024, 2025). "
+                        "If outside dataset_available_range, returns 0 rows with an explicit range message instead of guessing from other years."
                     ),
                 },
                 "q": {
@@ -284,6 +291,18 @@ MCP_TOOLS: List[Dict[str, Any]] = [
                 "count": {
                     "type": "integer",
                     "description": "Number of records returned or matched.",
+                },
+                "dataset_available_range": {
+                    "type": "string",
+                    "description": "Official historical range of this dataset.",
+                },
+                "primary_source": {
+                    "type": "string",
+                    "description": "Primary publishing government agency.",
+                },
+                "unit_and_field_semantics": {
+                    "type": "object",
+                    "description": "Explicit unit, date, and ID semantics.",
                 },
                 "records": {
                     "type": "array",
@@ -401,6 +420,38 @@ MCP_TOOLS: List[Dict[str, Any]] = [
         },
     },
 ]
+
+STANDALONE_EARLIEST_YEARS: Dict[str, int] = {
+    "macro": 1986,
+    "energy": 1983,
+    "sec_form13f": 2001,
+    "sec_insider": 2006,
+    "crime": 1960,
+    "climate": 2016,
+    "procurement": 2020,
+    "logistics": 2016,
+    "patents": 2021,
+    "wages": 2023,
+    "demographics": 2023,
+    "real_estate": 2026,
+    "land_prices_official": 1983,
+}
+
+STANDALONE_AVAILABLE_RANGES: Dict[str, str] = {
+    "macro": "1986-2026 (41 Years)",
+    "energy": "1983-2026 (44 Years)",
+    "sec_form13f": "2001-2026 (26 Years)",
+    "sec_insider": "2006-2026 (21 Years)",
+    "crime": "1960-2024 (65 Years)",
+    "climate": "2016-2026 (11 Years)",
+    "procurement": "2020-2026 (7 Years - 100% of official GEPS electronic records)",
+    "logistics": "2016-2024 (9 Years)",
+    "patents": "2021-2023 (3 Years - JPO/USPTO Top Rankings)",
+    "wages": "2023-2024 (2 Years - Latest official MHLW/BLS snapshot)",
+    "demographics": "2023-2024 (2 Years - Latest official census/tax income)",
+    "real_estate": "2026 (Latest FHFA HPI & Land Price Snapshot - 1 Year)",
+    "land_prices_official": "1983-2026 (44 Years - MLIT Official Land Price Points)",
+}
 
 
 class MegabankMCPHandler:
@@ -528,6 +579,38 @@ class MegabankMCPHandler:
         except Exception as exc:
             return {"status": "error", "detail": str(exc)}
 
+    def _resolve_dataset_metadata(self, norm_id: str) -> Dict[str, Any]:
+        avail_range = STANDALONE_AVAILABLE_RANGES.get(
+            norm_id, "2020-2026 / Latest Official Registry Snapshot"
+        )
+        earliest_year = STANDALONE_EARLIEST_YEARS.get(norm_id)
+        prim_source = "Japan Official Government Open Data (e-Stat / GEPS / NTA / MLIT / MHLW)"
+        semantics = {
+            "dataset_id": norm_id,
+            "primary_publisher": prim_source,
+            "dataset_available_range": avail_range,
+            "monetary_unit_rule": (
+                "All monetary columns (*_jpy, capital_amount_jpy, amount_jpy) are normalized to exact 1-JPY units "
+                "(already expanded from thousand/million-yen government tables). *_usd columns are in exact 1-USD units."
+            ),
+            "date_semantics_rule": (
+                "All dates use ISO-8601 (YYYY-MM-DD, converted from Japanese imperial eras). "
+                "'founded_date' / 'established_date' / 'contract_date' represents the official event, contract, or establishment reference date; "
+                "'updated_at' represents the publication or pipeline refresh date."
+            ),
+            "entity_identifier_rule": (
+                "'corporate_number' is a 13-digit zero-padded string (Japan National Tax Agency ID) or 10-digit US SEC CIK; "
+                "'municipality_code' is a 5-digit zero-padded string (JIS Municipality Code)."
+            ),
+        }
+        return {
+            "primary_source": prim_source,
+            "dataset_available_range": avail_range,
+            "earliest_year": earliest_year,
+            "latest_year": 2026,
+            "unit_and_field_semantics": semantics,
+        }
+
     def call_tool(
         self, name: str, arguments: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
@@ -592,9 +675,54 @@ class MegabankMCPHandler:
         if name == "search_japan_official_data":
             raw_id = str(args.get("dataset_id", "")).strip().lower() or "procurement"
             limit = min(max(int(args.get("limit", 10)), 1), 100)
+            norm_id = raw_id.replace("-", "_")
+            meta = self._resolve_dataset_metadata(norm_id)
+
+            raw_year = args.get("year")
+            year_val: Optional[int] = None
+            if raw_year is not None and str(raw_year).strip() != "":
+                try:
+                    year_val = int(str(raw_year).strip())
+                except ValueError:
+                    return {
+                        "status": "error",
+                        "status_code": 400,
+                        "error_code": "INVALID_YEAR_FORMAT",
+                        "dataset_id": norm_id,
+                        "dataset_available_range": meta["dataset_available_range"],
+                        "detail": f"Invalid year parameter: '{raw_year}'. Expected a 4-digit integer year.",
+                    }
+                earliest = meta.get("earliest_year")
+                latest = meta.get("latest_year") or 2026
+                effective_earliest = earliest if earliest is not None else 2020
+                if year_val < effective_earliest or year_val > latest:
+                    return {
+                        "status": "error",
+                        "status_code": 400,
+                        "error_code": "YEAR_OUT_OF_AVAILABLE_RANGE",
+                        "dataset_id": norm_id,
+                        "requested_year": year_val,
+                        "dataset_available_range": meta["dataset_available_range"],
+                        "primary_source": meta["primary_source"],
+                        "unit_and_field_semantics": meta["unit_and_field_semantics"],
+                        "count": 0,
+                        "total": 0,
+                        "data": [],
+                        "records": [],
+                        "detail": (
+                            f"Requested year {year_val} is outside the official available range "
+                            f"({meta['dataset_available_range']}) for dataset '{norm_id}'. "
+                            f"Returning 0 rows instead of substituting records from the nearest available year."
+                        ),
+                    }
+
             if self._is_dummy_key():
                 return {
                     "count": 1,
+                    "dataset_id": norm_id,
+                    "primary_source": meta["primary_source"],
+                    "dataset_available_range": meta["dataset_available_range"],
+                    "unit_and_field_semantics": meta["unit_and_field_semantics"],
                     "records": [
                         {
                             "dataset_id": raw_id,
@@ -606,7 +734,7 @@ class MegabankMCPHandler:
                         }
                     ],
                 }
-            norm_id = raw_id.replace("-", "_")
+
             endpoint_path = f"/api/v1/{raw_id.replace('_', '-')}/"
             try:
                 from routers.catalog import DATASET_ENDPOINT_PATHS
@@ -615,21 +743,26 @@ class MegabankMCPHandler:
                     endpoint_path = DATASET_ENDPOINT_PATHS[norm_id]
             except Exception:
                 pass
-            params = {
+            params: Dict[str, Any] = {
                 "prefecture": args.get("prefecture"),
                 "municipality_code": args.get("municipality_code"),
                 "corporate_number": args.get("corporate_number"),
                 "q": args.get("q"),
                 "limit": limit,
             }
+            if year_val is not None:
+                params["year"] = year_val
             res = self._request("GET", endpoint_path, params=params)
-            if (
-                isinstance(res, dict)
-                and "records" not in res
-                and res.get("status") != "error"
-            ):
-                recs = res.get("data") if isinstance(res.get("data"), list) else []
-                return {"count": int(res.get("total", len(recs))), "records": recs}
+            if isinstance(res, dict):
+                res = dict(res)
+                res.setdefault("dataset_id", norm_id)
+                res.setdefault("primary_source", meta["primary_source"])
+                res.setdefault("dataset_available_range", meta["dataset_available_range"])
+                res.setdefault("unit_and_field_semantics", meta["unit_and_field_semantics"])
+                if "records" not in res and res.get("status") != "error":
+                    recs = res.get("data") if isinstance(res.get("data"), list) else []
+                    res["count"] = int(res.get("total", len(recs)))
+                    res["records"] = recs
             return res
 
         if name == "execute_japan_megabank_sql":
