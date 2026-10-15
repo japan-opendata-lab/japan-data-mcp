@@ -117,33 +117,54 @@ MCP_TOOLS: List[Dict[str, Any]] = [
     {
         "name": "list_japan_datasets",
         "description": (
-            "Search and list all 155 official Japanese & US datasets in Japan Official Data Megabank "
-            "(demographics, real_estate, procurement, companies, medical, renewable_energy, grid_capacity, "
-            "police_stations, dams, active_faults, etc.). Supports both English and Japanese keywords."
+            "Discover and list available dataset IDs, titles, record counts, and coverage years across all 155 official "
+            "Japanese datasets in Japan Official Data Megabank (demographics, real_estate, procurement, companies, medical, "
+            "renewable_energy, grid_capacity, etc.). "
+            "WHEN TO USE: Call this tool first when you do not know the exact 'dataset_id' to query. "
+            "NEXT STEP: Pass a discovered 'dataset_id' to 'describe_japan_dataset' to inspect columns, or directly to "
+            "'search_japan_official_data' to fetch rows. "
+            "WHEN NOT TO USE: Do not use this tool to fetch actual data rows (use 'search_japan_official_data' instead) "
+            "or B2B bulk product bundles (use 'list_flagship_b2b_bundles')."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "query": {
                     "type": "string",
-                    "description": "Optional keyword in English or Japanese (e.g. 'procurement', 'hospital', 'solar', '入札', '医療').",
+                    "description": (
+                        "Optional case-insensitive keyword filter in English or Japanese to match dataset IDs or titles "
+                        "(e.g., 'procurement', 'hospital', 'solar', '入札', '医療'). If omitted, returns the top catalog entries."
+                    ),
                 },
                 "limit": {
                     "type": "integer",
-                    "description": "Maximum number of datasets to return (default: 25, max: 155).",
+                    "description": "Maximum number of dataset catalog entries to return (1 to 155, default: 25).",
                     "default": 25,
+                    "minimum": 1,
+                    "maximum": 155,
                 },
             },
+            "additionalProperties": False,
         },
         "outputSchema": {
             "type": "object",
             "properties": {
-                "total": {"type": "integer"},
-                "datasets": {"type": "array", "items": {"type": "object"}},
+                "total": {
+                    "type": "integer",
+                    "description": "Total number of datasets available in the catalog.",
+                },
+                "datasets": {
+                    "type": "array",
+                    "description": "List of matching dataset metadata objects containing dataset_id, title_en, records, and coverage.",
+                    "items": {"type": "object"},
+                },
             },
         },
         "annotations": {
             "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": False,
             "audience": ["user", "assistant"],
             "priority": 1.0,
         },
@@ -151,29 +172,49 @@ MCP_TOOLS: List[Dict[str, Any]] = [
     {
         "name": "describe_japan_dataset",
         "description": (
-            "Inspect the exact column schema, data types, historical coverage range, primary government source, "
-            "and a sanitized sample record (with English prefecture_en / city_en) for a specific dataset."
+            "Retrieve the exact column schema, data types, historical coverage range, primary government ministry source, "
+            "and a representative sample record (including English 'prefecture_en' and 'city_en') for a single dataset. "
+            "WHEN TO USE: Call this after 'list_japan_datasets' and before 'execute_japan_megabank_sql' or "
+            "'search_japan_official_data' to verify exact column names and data formats. "
+            "WHEN NOT TO USE: Do not use this to search or filter multiple records (use 'search_japan_official_data' "
+            "for filtered rows or 'execute_japan_megabank_sql' for aggregations)."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "dataset_id": {
                     "type": "string",
-                    "description": "Dataset identifier (e.g. 'demographics', 'procurement', 'medical', 'renewable_energy', 'companies').",
+                    "description": (
+                        "Exact dataset identifier obtained from 'list_japan_datasets' "
+                        "(lowercase snake_case, e.g., 'demographics', 'procurement', 'medical', 'renewable_energy', 'companies')."
+                    ),
                 }
             },
             "required": ["dataset_id"],
+            "additionalProperties": False,
         },
         "outputSchema": {
             "type": "object",
             "properties": {
-                "dataset_id": {"type": "string"},
-                "schema": {"type": "object"},
-                "sample_record": {"type": "object"},
+                "dataset_id": {
+                    "type": "string",
+                    "description": "The inspected dataset identifier.",
+                },
+                "schema": {
+                    "type": "object",
+                    "description": "Mapping of column names to their data types and formats.",
+                },
+                "sample_record": {
+                    "type": "object",
+                    "description": "A single sanitized sample row demonstrating actual field values.",
+                },
             },
         },
         "annotations": {
             "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": False,
             "audience": ["user", "assistant"],
             "priority": 0.9,
         },
@@ -181,50 +222,81 @@ MCP_TOOLS: List[Dict[str, Any]] = [
     {
         "name": "search_japan_official_data",
         "description": (
-            "Query records from any of the 155 official datasets using standardized filters. "
-            "Supports English prefecture names (e.g., 'Tokyo', 'Osaka', 'Hokkaido'), 5-digit JIS municipality codes "
-            "(e.g., '13101'), 13-digit NTA corporate numbers, and keyword search."
+            "Fetch and filter actual data records from a single dataset using standardized parameters "
+            "(prefecture name, 5-digit JIS municipality code, 13-digit corporate number, or free-text keyword). "
+            "Multiple filters are combined using logical AND. "
+            "WHEN TO USE: Use for fast, single-table record lookups and filtered sampling once you know the 'dataset_id'. "
+            "WHEN NOT TO USE: Do not use for discovering dataset IDs (use 'list_japan_datasets'), inspecting column schemas "
+            "(use 'describe_japan_dataset'), or performing cross-table JOINs and GROUP BY aggregations (use 'execute_japan_megabank_sql')."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "dataset_id": {
                     "type": "string",
-                    "description": "Target dataset ID (e.g., 'demographics', 'procurement', 'medical', 'companies', 'real_estate').",
+                    "description": (
+                        "Target dataset ID obtained from 'list_japan_datasets' "
+                        "(e.g., 'demographics', 'procurement', 'medical', 'companies', 'real_estate')."
+                    ),
                 },
                 "prefecture": {
                     "type": "string",
-                    "description": "Prefecture name in English or Japanese (e.g., 'Tokyo', 'Osaka', 'Hokkaido', '東京都').",
+                    "description": (
+                        "Optional prefecture filter in English romaji or Japanese kanji "
+                        "(e.g., 'Tokyo', 'Osaka', 'Hokkaido', '東京都'). Case-insensitive."
+                    ),
                 },
                 "municipality_code": {
                     "type": "string",
-                    "description": "5-digit JIS municipality code with leading zero preserved (e.g., '13101', '01101').",
+                    "description": (
+                        "Optional 5-digit JIS municipality code string with leading zero preserved "
+                        "(e.g., '13101' for Chiyoda-ku, '01101' for Sapporo)."
+                    ),
                 },
                 "corporate_number": {
                     "type": "string",
-                    "description": "13-digit Japan National Tax Agency corporate number (or 10-digit US SEC CIK).",
+                    "description": (
+                        "Optional exact 13-digit Japan National Tax Agency corporate number string "
+                        "(e.g., '1000012010019') or 10-digit US SEC CIK."
+                    ),
                 },
                 "q": {
                     "type": "string",
-                    "description": "Free-text search keyword (company name, facility name, contract title, etc.).",
+                    "description": (
+                        "Optional case-insensitive free-text substring search across company names, "
+                        "facility names, address fields, or contract titles (e.g., 'Cloud', 'Hospital')."
+                    ),
                 },
                 "limit": {
                     "type": "integer",
-                    "description": "Number of records to return (default: 10, max: 100).",
+                    "description": "Maximum number of matching records to return (1 to 100, default: 10).",
                     "default": 10,
+                    "minimum": 1,
+                    "maximum": 100,
                 },
             },
             "required": ["dataset_id"],
+            "additionalProperties": False,
         },
         "outputSchema": {
             "type": "object",
             "properties": {
-                "count": {"type": "integer"},
-                "records": {"type": "array", "items": {"type": "object"}},
+                "count": {
+                    "type": "integer",
+                    "description": "Number of records returned or matched.",
+                },
+                "records": {
+                    "type": "array",
+                    "description": "Array of normalized record objects matching the filter criteria.",
+                    "items": {"type": "object"},
+                },
             },
         },
         "annotations": {
             "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": False,
             "audience": ["user", "assistant"],
             "priority": 1.0,
         },
@@ -233,29 +305,51 @@ MCP_TOOLS: List[Dict[str, Any]] = [
         "name": "execute_japan_megabank_sql",
         "description": (
             "Execute a read-only DuckDB SQL SELECT query across all 155 mounted datasets (10.16M+ records). "
-            "Ideal for cross-table JOINs using 'municipality_code' (5-digit JIS code) or 'corporate_number' (13-digit ID). "
-            "Note: Requires MEGA tier subscription on RapidAPI or local database access."
+            "Enables complex aggregations (COUNT, SUM, AVG, GROUP BY) and multi-table JOINs using 'municipality_code' "
+            "(5-digit JIS code) or 'corporate_number' (13-digit ID). Enforces AST validation (single SELECT only, max 10,000 rows). "
+            "PREREQUISITE: Requires a MEGA tier subscription on RapidAPI or local database access; always call "
+            "'describe_japan_dataset' first to confirm table and column names. "
+            "WHEN NOT TO USE: Do not use for simple single-table keyword or prefecture lookups (use 'search_japan_official_data' "
+            "instead, which works on all tiers including BASIC) or for browsing available tables (use 'list_japan_datasets')."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "sql": {
                     "type": "string",
-                    "description": "Read-only SQL SELECT query (e.g., SELECT prefecture, count(*) AS cnt FROM medical GROUP BY 1 ORDER BY 2 DESC LIMIT 10).",
+                    "description": (
+                        "Single read-only DuckDB SQL SELECT statement. DDL/DML statements are rejected. "
+                        "Always include a LIMIT clause (e.g., 'SELECT prefecture_en, COUNT(*) AS cnt FROM medical GROUP BY 1 ORDER BY 2 DESC LIMIT 10')."
+                    ),
                 }
             },
             "required": ["sql"],
+            "additionalProperties": False,
         },
         "outputSchema": {
             "type": "object",
             "properties": {
-                "row_count": {"type": "integer"},
-                "columns": {"type": "array", "items": {"type": "string"}},
-                "rows": {"type": "array", "items": {"type": "object"}},
+                "row_count": {
+                    "type": "integer",
+                    "description": "Number of result rows returned by the SQL query.",
+                },
+                "columns": {
+                    "type": "array",
+                    "description": "Ordered list of column names in the query result.",
+                    "items": {"type": "string"},
+                },
+                "rows": {
+                    "type": "array",
+                    "description": "List of result row objects mapped by column name.",
+                    "items": {"type": "object"},
+                },
             },
         },
         "annotations": {
             "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": False,
             "audience": ["user", "assistant"],
             "priority": 0.8,
         },
@@ -263,27 +357,45 @@ MCP_TOOLS: List[Dict[str, Any]] = [
     {
         "name": "list_flagship_b2b_bundles",
         "description": (
-            "List the 5 Flagship Enterprise All-in-One Data Bundles (Real Estate, Government Procurement, "
-            "Healthcare, Renewable Energy/GX, Municipal Finance/Resilience) with pricing, discounts, and B2B invoice details."
+            "List the 5 Flagship Enterprise All-in-One Data Bundles (BUNDLE-01 Real Estate, BUNDLE-02 Government Procurement, "
+            "BUNDLE-03 Healthcare, BUNDLE-04 Renewable Energy/GX, BUNDLE-05 Municipal Finance/Resilience) with included dataset counts, "
+            "total records, JPY pricing, discount rates, and qualified B2B invoice availability. "
+            "WHEN TO USE: Use only when the user asks about bulk downloadable ZIP packages, enterprise pricing, or B2B invoice options. "
+            "WHEN NOT TO USE: Do not use for listing individual API datasets (use 'list_japan_datasets') or querying actual data "
+            "records (use 'search_japan_official_data')."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "bundle_code": {
                     "type": "string",
-                    "description": "Optional bundle code filter (e.g., 'BUNDLE-01' through 'BUNDLE-05').",
+                    "description": (
+                        "Optional exact bundle identifier from 'BUNDLE-01' to 'BUNDLE-05' (case-insensitive). "
+                        "If omitted, returns all 5 flagship bundles."
+                    ),
                 }
             },
+            "additionalProperties": False,
         },
         "outputSchema": {
             "type": "object",
             "properties": {
-                "total": {"type": "integer"},
-                "bundles": {"type": "array", "items": {"type": "object"}},
+                "total": {
+                    "type": "integer",
+                    "description": "Number of flagship bundles returned.",
+                },
+                "bundles": {
+                    "type": "array",
+                    "description": "List of bundle metadata objects with bundle_code, title, datasets_included, records, and price_jpy.",
+                    "items": {"type": "object"},
+                },
             },
         },
         "annotations": {
             "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": False,
             "audience": ["user", "assistant"],
             "priority": 0.9,
         },
@@ -436,7 +548,10 @@ class MegabankMCPHandler:
             res = self._request("GET", "/api/v1/catalog/", params={"q": q or None})
             if isinstance(res, dict) and "datasets" not in res:
                 data_list = res.get("data") if isinstance(res.get("data"), list) else []
-                return {"total": int(res.get("total", len(data_list))), "datasets": data_list[:limit]}
+                return {
+                    "total": int(res.get("total", len(data_list))),
+                    "datasets": data_list[:limit],
+                }
             return res
 
         if name == "describe_japan_dataset":
@@ -462,7 +577,11 @@ class MegabankMCPHandler:
                     },
                 }
             res = self._request("GET", f"/api/v1/catalog/{dataset_id}")
-            if isinstance(res, dict) and "schema" not in res and res.get("status") != "error":
+            if (
+                isinstance(res, dict)
+                and "schema" not in res
+                and res.get("status") != "error"
+            ):
                 return {
                     "dataset_id": dataset_id,
                     "schema": res.get("columns", res),
@@ -480,7 +599,8 @@ class MegabankMCPHandler:
                         {
                             "dataset_id": raw_id,
                             "prefecture_en": args.get("prefecture") or "Tokyo",
-                            "municipality_code": args.get("municipality_code") or "13101",
+                            "municipality_code": args.get("municipality_code")
+                            or "13101",
                             "status": "preview_mode",
                             "get_free_api_key": "https://rapidapi.com/organization/japan-opendata-lab",
                         }
@@ -503,7 +623,11 @@ class MegabankMCPHandler:
                 "limit": limit,
             }
             res = self._request("GET", endpoint_path, params=params)
-            if isinstance(res, dict) and "records" not in res and res.get("status") != "error":
+            if (
+                isinstance(res, dict)
+                and "records" not in res
+                and res.get("status") != "error"
+            ):
                 recs = res.get("data") if isinstance(res.get("data"), list) else []
                 return {"count": int(res.get("total", len(recs))), "records": recs}
             return res
@@ -525,9 +649,15 @@ class MegabankMCPHandler:
                     ],
                 }
             res = self._request("POST", "/api/v1/query/", json_body={"sql": sql})
-            if isinstance(res, dict) and "rows" not in res and res.get("status") != "error":
+            if (
+                isinstance(res, dict)
+                and "rows" not in res
+                and res.get("status") != "error"
+            ):
                 rows = res.get("data") if isinstance(res.get("data"), list) else []
-                cols = list(rows[0].keys()) if rows and isinstance(rows[0], dict) else []
+                cols = (
+                    list(rows[0].keys()) if rows and isinstance(rows[0], dict) else []
+                )
                 return {"row_count": len(rows), "columns": cols, "rows": rows}
             return res
 
@@ -541,10 +671,20 @@ class MegabankMCPHandler:
                 ]
                 return {"total": len(bundles), "bundles": bundles}
             res = self._request(
-                "GET", "/api/v1/catalog/bundles", params={"bundle_code": bundle_code or None}
+                "GET",
+                "/api/v1/catalog/bundles",
+                params={"bundle_code": bundle_code or None},
             )
-            if isinstance(res, dict) and "bundles" not in res and res.get("status") != "error":
-                b_list = res.get("data") if isinstance(res.get("data"), list) else FALLBACK_BUNDLES
+            if (
+                isinstance(res, dict)
+                and "bundles" not in res
+                and res.get("status") != "error"
+            ):
+                b_list = (
+                    res.get("data")
+                    if isinstance(res.get("data"), list)
+                    else FALLBACK_BUNDLES
+                )
                 return {"total": len(b_list), "bundles": b_list}
             return res
 
