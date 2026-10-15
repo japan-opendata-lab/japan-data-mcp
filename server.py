@@ -30,7 +30,7 @@ MCP_PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "japan-data-mcp"
 SERVER_VERSION = "1.0.0"
 
-DEFAULT_RAPIDAPI_HOST = os.environ.get("RAPIDAPI_HOST", "japan-data-megabank-api.p.rapidapi.com")
+DEFAULT_RAPIDAPI_HOST = os.environ.get("RAPIDAPI_HOST", "japan-official-data-megabank-api-us-standard-normalized.p.rapidapi.com")
 DEFAULT_API_BASE_URL = os.environ.get("JAPAN_DATA_API_URL", f"https://{DEFAULT_RAPIDAPI_HOST}")
 
 
