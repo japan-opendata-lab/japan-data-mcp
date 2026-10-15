@@ -5,13 +5,6 @@ Claude Desktop, Cursor, Windsurf, Cline, LangChain 等の AI エージェント�
 日本の公的オープンデータ（全155データセット・1,016万件超：人口、地価、全省庁入札GEPS、
 医療・病院、再エネ・系統空き容量、上場企業、防災ハザード等）を英語・日本語で直接検索・SQL集計できる
 公式 MCP (JSON-RPC 2.0 over stdio) サーバー実装。
-
-【動作モード】
-1. Remote API モード (外部配布時):
-   環境変数 `RAPIDAPI_KEY` (または `JAPAN_DATA_API_KEY`) が設定されている場合、
-   RapidAPI Gateway / 本番 API エンドポイントへ HTTP リクエストを送信。
-2. Local Direct モード (ローカル環境 / 統合テスト時):
-   ローカルの FastAPI / DuckDB インメモリエンジンを直接呼び出し、ミリ秒単位で応答。
 """
 
 import json
@@ -47,6 +40,39 @@ DUMMY_KEYS = {
     "your_api_key",
     "123",
 }
+
+FALLBACK_DATASETS = [
+    {
+        "dataset_id": "procurement",
+        "title_en": "Government Procurement & Winning Bids (GEPS)",
+        "records": 83097,
+        "coverage": "2020-2026",
+    },
+    {
+        "dataset_id": "companies",
+        "title_en": "13-Digit Corporate Registry & Invoice Master",
+        "records": 5200000,
+        "coverage": "Latest",
+    },
+    {
+        "dataset_id": "medical",
+        "title_en": "National Hospitals, Clinics & Pharmacies Master",
+        "records": 382606,
+        "coverage": "Latest",
+    },
+    {
+        "dataset_id": "real_estate",
+        "title_en": "Official Land Prices & Real Estate Transactions",
+        "records": 26000,
+        "coverage": "1983-2026",
+    },
+    {
+        "dataset_id": "demographics",
+        "title_en": "1,741 Municipalities Demographics & Projections",
+        "records": 21642,
+        "coverage": "2000-2026",
+    },
+]
 
 FALLBACK_BUNDLES = [
     {
@@ -346,15 +372,6 @@ class MegabankMCPHandler:
             except Exception:
                 pass
 
-        if self._is_dummy_key():
-            return {
-                "status": "preview_mode",
-                "message": "Running in sandbox preview mode because a placeholder RAPIDAPI_KEY was provided.",
-                "get_free_api_key": "https://rapidapi.com/organization/japan-opendata-lab",
-                "requested_endpoint": path,
-                "parameters": clean_params,
-            }
-
         query_str = urllib.parse.urlencode(clean_params)
         url = f"{self.base_url}{path}"
         if query_str:
@@ -389,10 +406,6 @@ class MegabankMCPHandler:
                 if isinstance(body, dict):
                     body.setdefault("status", "error")
                     body.setdefault("status_code", exc.code)
-                    body["help"] = (
-                        "Ensure your RAPIDAPI_KEY is subscribed to Japan Official Data Megabank API "
-                        "(Free BASIC plan available at https://rapidapi.com/organization/japan-opendata-lab)."
-                    )
                 return body
             except Exception:
                 return {
@@ -409,25 +422,70 @@ class MegabankMCPHandler:
         args = arguments or {}
 
         if name == "list_japan_datasets":
-            q = args.get("query")
+            q = str(args.get("query") or "").strip().lower()
             limit = min(max(int(args.get("limit", 25)), 1), 155)
-            res = self._request("GET", "/api/v1/catalog/", params={"q": q})
-            if isinstance(res, dict) and isinstance(res.get("data"), list):
-                res = dict(res)
-                res["returned_datasets"] = len(res["data"][:limit])
-                res["data"] = res["data"][:limit]
+            if self._is_dummy_key():
+                items = [
+                    d
+                    for d in FALLBACK_DATASETS
+                    if not q
+                    or q in d["dataset_id"].lower()
+                    or q in d["title_en"].lower()
+                ][:limit]
+                return {"total": 155, "datasets": items}
+            res = self._request("GET", "/api/v1/catalog/", params={"q": q or None})
+            if isinstance(res, dict) and "datasets" not in res:
+                data_list = res.get("data") if isinstance(res.get("data"), list) else []
+                return {"total": int(res.get("total", len(data_list))), "datasets": data_list[:limit]}
             return res
 
         if name == "describe_japan_dataset":
-            dataset_id = str(args.get("dataset_id", "")).strip()
-            if not dataset_id:
-                return {"status": "error", "detail": "dataset_id is required."}
-            return self._request("GET", f"/api/v1/catalog/{dataset_id}")
+            dataset_id = str(args.get("dataset_id", "")).strip() or "procurement"
+            if self._is_dummy_key():
+                return {
+                    "dataset_id": dataset_id,
+                    "schema": {
+                        "record_id": "string",
+                        "corporate_number": "string (13-digit)",
+                        "municipality_code": "string (5-digit JIS)",
+                        "prefecture_en": "string",
+                        "city_en": "string",
+                        "latitude": "float (WGS84)",
+                        "longitude": "float (WGS84)",
+                    },
+                    "sample_record": {
+                        "dataset_id": dataset_id,
+                        "prefecture_en": "Tokyo",
+                        "city_en": "Chiyoda-ku",
+                        "municipality_code": "13101",
+                        "note": "Sandbox preview mode. Provide a valid RapidAPI key for live records.",
+                    },
+                }
+            res = self._request("GET", f"/api/v1/catalog/{dataset_id}")
+            if isinstance(res, dict) and "schema" not in res and res.get("status") != "error":
+                return {
+                    "dataset_id": dataset_id,
+                    "schema": res.get("columns", res),
+                    "sample_record": res.get("sample", {}),
+                }
+            return res
 
         if name == "search_japan_official_data":
-            raw_id = str(args.get("dataset_id", "")).strip().lower()
-            if not raw_id:
-                return {"status": "error", "detail": "dataset_id is required."}
+            raw_id = str(args.get("dataset_id", "")).strip().lower() or "procurement"
+            limit = min(max(int(args.get("limit", 10)), 1), 100)
+            if self._is_dummy_key():
+                return {
+                    "count": 1,
+                    "records": [
+                        {
+                            "dataset_id": raw_id,
+                            "prefecture_en": args.get("prefecture") or "Tokyo",
+                            "municipality_code": args.get("municipality_code") or "13101",
+                            "status": "preview_mode",
+                            "get_free_api_key": "https://rapidapi.com/organization/japan-opendata-lab",
+                        }
+                    ],
+                }
             norm_id = raw_id.replace("-", "_")
             endpoint_path = f"/api/v1/{raw_id.replace('_', '-')}/"
             try:
@@ -437,7 +495,6 @@ class MegabankMCPHandler:
                     endpoint_path = DATASET_ENDPOINT_PATHS[norm_id]
             except Exception:
                 pass
-            limit = min(max(int(args.get("limit", 10)), 1), 100)
             params = {
                 "prefecture": args.get("prefecture"),
                 "municipality_code": args.get("municipality_code"),
@@ -445,13 +502,34 @@ class MegabankMCPHandler:
                 "q": args.get("q"),
                 "limit": limit,
             }
-            return self._request("GET", endpoint_path, params=params)
+            res = self._request("GET", endpoint_path, params=params)
+            if isinstance(res, dict) and "records" not in res and res.get("status") != "error":
+                recs = res.get("data") if isinstance(res.get("data"), list) else []
+                return {"count": int(res.get("total", len(recs))), "records": recs}
+            return res
 
         if name == "execute_japan_megabank_sql":
             sql = str(args.get("sql", "")).strip()
             if not sql:
                 return {"status": "error", "detail": "sql query string is required."}
-            return self._request("POST", "/api/v1/query/", json_body={"sql": sql})
+            if self._is_dummy_key():
+                return {
+                    "row_count": 1,
+                    "columns": ["status", "message", "executed_sql"],
+                    "rows": [
+                        {
+                            "status": "preview_mode",
+                            "message": "Provide a valid RapidAPI MEGA tier key to execute live DuckDB SQL.",
+                            "executed_sql": sql,
+                        }
+                    ],
+                }
+            res = self._request("POST", "/api/v1/query/", json_body={"sql": sql})
+            if isinstance(res, dict) and "rows" not in res and res.get("status") != "error":
+                rows = res.get("data") if isinstance(res.get("data"), list) else []
+                cols = list(rows[0].keys()) if rows and isinstance(rows[0], dict) else []
+                return {"row_count": len(rows), "columns": cols, "rows": rows}
+            return res
 
         if name == "list_flagship_b2b_bundles":
             bundle_code = str(args.get("bundle_code") or "").strip().upper()
@@ -462,9 +540,13 @@ class MegabankMCPHandler:
                     if not bundle_code or b["bundle_code"] == bundle_code
                 ]
                 return {"total": len(bundles), "bundles": bundles}
-            return self._request(
-                "GET", "/api/v1/catalog/bundles", params={"bundle_code": bundle_code}
+            res = self._request(
+                "GET", "/api/v1/catalog/bundles", params={"bundle_code": bundle_code or None}
             )
+            if isinstance(res, dict) and "bundles" not in res and res.get("status") != "error":
+                b_list = res.get("data") if isinstance(res.get("data"), list) else FALLBACK_BUNDLES
+                return {"total": len(b_list), "bundles": b_list}
+            return res
 
         raise ValueError(f"Unknown MCP tool: {name}")
 
@@ -513,20 +595,24 @@ class MegabankMCPHandler:
                     or int(output.get("status_code", 200) or 200) >= 400
                     or ("detail" in output and "status" not in output)
                 )
+                result_payload: Dict[str, Any] = {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": json.dumps(
+                                output, ensure_ascii=False, indent=2
+                            ),
+                        }
+                    ],
+                    "isError": is_err,
+                }
+                if not is_err and isinstance(output, dict):
+                    result_payload["structuredContent"] = output
+
                 return {
                     "jsonrpc": "2.0",
                     "id": msg_id,
-                    "result": {
-                        "content": [
-                            {
-                                "type": "text",
-                                "text": json.dumps(
-                                    output, ensure_ascii=False, indent=2
-                                ),
-                            }
-                        ],
-                        "isError": is_err,
-                    },
+                    "result": result_payload,
                 }
             except Exception as exc:
                 return {
